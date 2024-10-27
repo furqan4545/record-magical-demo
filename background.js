@@ -32,7 +32,7 @@
 //     try {
 //       // Try to execute toggleRecording message in the original tab
 //       await chrome.tabs.sendMessage(recordingTabId, {
-//         action: "toggleRecording",
+//         action: "stopCamera",
 //       });
 //     } catch (error) {
 //       console.log("Could not stop camera:", error);
@@ -83,18 +83,13 @@
 //         isRecording = true;
 //         chrome.action.setBadgeText({ text: "REC" });
 //         chrome.action.setBadgeBackgroundColor({ color: "#FF0000" });
+//         // After successfully starting recording
+//         sendResponse({ success: true });
 //       } catch (error) {
 //         console.error("Error in startRecording:", error);
 //         isRecording = false;
 //         // Notify of error
-//         chrome.runtime
-//           .sendMessage({
-//             action: "recordingError",
-//             error: "Failed to start recording",
-//           })
-//           .catch(() => {
-//             /* Ignore if popup is closed */
-//           });
+//         sendResponse({ success: false, error: error.message });
 //       }
 //     })();
 //     return true;
@@ -107,6 +102,11 @@
 //     // Handle case where recording was cancelled in offscreen document.. show alert to user.
 //     cleanupAfterCancellation(request.reason);
 //     return true;
+//   }
+
+//   if (request.action === "screenShareAllowed") {
+//     // Relay this message to popup.js
+//     chrome.runtime.sendMessage({ action: "screenShareAllowed" });
 //   }
 
 //   if (request.action === "stopRecording") {
@@ -278,16 +278,6 @@ async function stopCameraInRecordingTab() {
     }
   }
 }
-
-// async function cleanupAfterCancellation() {
-//   console.log("User cancelled screen sharing. Cleaning up...");
-//   if (await chrome.offscreen.hasDocument()) {
-//     await chrome.offscreen.closeDocument();
-//   }
-//   isRecording = false;
-//   activeTabId = null;
-//   chrome.action.setBadgeText({ text: "" });
-// }
 
 async function cleanupAfterCancellation(reason) {
   console.log(`Recording cancelled. Reason: ${reason}. Cleaning up...`);

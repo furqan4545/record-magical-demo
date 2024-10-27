@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -17,10 +16,24 @@
     button.recording {
       background-color: #f44336;
     }
+    /* Styles for the toggle switch */
+    .toggle-container {
+      display: flex;
+      align-items: center;
+      margin: 5px;
+    }
+    .toggle-label {
+      margin-left: 8px;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
   <button id="recordButton">Record Tab</button>
+  <div class="toggle-container">
+    <input type="checkbox" id="cameraToggle" />
+    <label for="cameraToggle" class="toggle-label">Include Camera</label>
+  </div>
   <script src="popup.js"></script>
 </body>
 </html>

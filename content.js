@@ -5,13 +5,21 @@
 
 // // Set up message listener
 // chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-//   if (request.action === "toggleRecording") {
+//   if (request.action === "startCamera") {
 //     if (!cameraContainer) {
 //       startCamera();
+//       sendResponse({ success: true });
 //     } else {
-//       stopCamera();
+//       sendResponse({ success: false, error: "Camera is already active." });
 //     }
-//     sendResponse({ success: true });
+//     return true;
+//   } else if (request.action === "stopCamera") {
+//     if (cameraContainer) {
+//       stopCamera();
+//       sendResponse({ success: true });
+//     } else {
+//       sendResponse({ success: false, error: "Camera is not active." });
+//     }
 //     return true;
 //   } else if (request.action === "download-recording") {
 //     try {
@@ -105,7 +113,6 @@
 // window.addEventListener("beforeunload", () => {
 //   stopCamera();
 // });
-
 /////////// test ///////////////
 
 let cameraContainer = null;
