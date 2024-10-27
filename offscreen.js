@@ -24,7 +24,7 @@
 //   }
 // }
 
-// async function startRecording(streamId) {
+// async function startRecording({ streamId, includeAudio }) {
 //   try {
 //     if (recorder?.state === "recording") {
 //       console.log("Already recording, stopping previous recording");
@@ -33,17 +33,6 @@
 
 //     console.log("Starting recording with streamId:", streamId);
 
-//     // Get audio stream using getUserMedia
-//     const audioStream = await navigator.mediaDevices.getUserMedia({
-//       audio: {
-//         echoCancellation: true,
-//         noiseSuppression: true,
-//         autoGainControl: true,
-//       },
-//     });
-
-//     console.log("Audio stream obtained:", audioStream);
-
 //     // Get display stream using getDisplayMedia
 //     displayStream = await navigator.mediaDevices.getDisplayMedia({
 //       video: {
@@ -51,15 +40,32 @@
 //         logicalSurface: true,
 //         cursor: "always",
 //       },
+//       audio: false, // Do not include system audio
 //     });
 
 //     console.log("Display stream obtained:", displayStream);
 
-//     // Combine audio and video tracks
-//     combinedStream = new MediaStream([
-//       ...displayStream.getVideoTracks(),
-//       ...audioStream.getAudioTracks(),
-//     ]);
+//     // Initialize combinedStream with displayStream
+//     combinedStream = new MediaStream([...displayStream.getTracks()]);
+
+//     if (includeAudio) {
+//       // Get audio stream using getUserMedia
+//       const audioStream = await navigator.mediaDevices.getUserMedia({
+//         audio: {
+//           echoCancellation: true,
+//           noiseSuppression: true,
+//           autoGainControl: true,
+//         },
+//         video: false,
+//       });
+
+//       console.log("Audio stream obtained:", audioStream);
+
+//       // Add audio tracks to combinedStream
+//       audioStream.getAudioTracks().forEach((track) => {
+//         combinedStream.addTrack(track);
+//       });
+//     }
 
 //     console.log("Combined stream:", combinedStream);
 
@@ -67,7 +73,7 @@
 //     recorder = new MediaRecorder(combinedStream, {
 //       mimeType: "video/webm;codecs=vp8,opus",
 //       videoBitsPerSecond: 2500000,
-//       audioBitsPerSecond: 128000,
+//       audioBitsPerSecond: includeAudio ? 128000 : 0,
 //     });
 
 //     data = [];
@@ -119,9 +125,21 @@
 //     // Start recording with 1-second chunks
 //     recorder.start(1000);
 //     console.log("Screen recording started successfully");
+//     // Notify that screen sharing was allowed
+//     chrome.runtime.sendMessage({ action: "screenShareAllowed" });
 //   } catch (err) {
 //     console.error("Error starting recording:", err);
-//     chrome.runtime.sendMessage({ action: "recordingCancelled" });
+//     if (err.name === "NotAllowedError") {
+//       chrome.runtime.sendMessage({
+//         action: "recordingCancelled",
+//         reason: "Permission denied",
+//       });
+//     } else {
+//       chrome.runtime.sendMessage({
+//         action: "recordingCancelled",
+//         reason: "Unknown error",
+//       });
+//     }
 //   }
 // }
 
@@ -169,16 +187,6 @@
 //   stopRecording();
 // });
 
-// // Handle messages from the extension
-// chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-//   if (message.type === "check-recording-status") {
-//     sendResponse({
-//       isRecording: recorder?.state === "recording",
-//     });
-//   }
-//   return true;
-// });
-
 ///////////// test ///////////////
 
 let recorder = null;
@@ -205,7 +213,7 @@ async function handleMessage(message) {
   }
 }
 
-async function startRecording(streamId) {
+async function startRecording({ streamId, includeAudio }) {
   try {
     if (recorder?.state === "recording") {
       console.log("Already recording, stopping previous recording");
@@ -214,17 +222,6 @@ async function startRecording(streamId) {
 
     console.log("Starting recording with streamId:", streamId);
 
-    // Get audio stream using getUserMedia
-    const audioStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
-
-    console.log("Audio stream obtained:", audioStream);
-
     // Get display stream using getDisplayMedia
     displayStream = await navigator.mediaDevices.getDisplayMedia({
       video: {
@@ -232,18 +229,32 @@ async function startRecording(streamId) {
         logicalSurface: true,
         cursor: "always",
       },
+      audio: false, // Do not include system audio
     });
-
-    // If successful, send a message indicating success
-    chrome.runtime.sendMessage({ action: "screenShareAllowed" });
 
     console.log("Display stream obtained:", displayStream);
 
-    // Combine audio and video tracks
-    combinedStream = new MediaStream([
-      ...displayStream.getVideoTracks(),
-      ...audioStream.getAudioTracks(),
-    ]);
+    // Initialize combinedStream with displayStream
+    combinedStream = new MediaStream([...displayStream.getTracks()]);
+
+    if (includeAudio) {
+      // Get audio stream using getUserMedia
+      const audioStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: false,
+      });
+
+      console.log("Audio stream obtained:", audioStream);
+
+      // Add audio tracks to combinedStream
+      audioStream.getAudioTracks().forEach((track) => {
+        combinedStream.addTrack(track);
+      });
+    }
 
     console.log("Combined stream:", combinedStream);
 
@@ -251,7 +262,7 @@ async function startRecording(streamId) {
     recorder = new MediaRecorder(combinedStream, {
       mimeType: "video/webm;codecs=vp8,opus",
       videoBitsPerSecond: 2500000,
-      audioBitsPerSecond: 128000,
+      audioBitsPerSecond: includeAudio ? 128000 : 0,
     });
 
     data = [];
@@ -303,6 +314,8 @@ async function startRecording(streamId) {
     // Start recording with 1-second chunks
     recorder.start(1000);
     console.log("Screen recording started successfully");
+    // Notify that screen sharing was allowed
+    chrome.runtime.sendMessage({ action: "screenShareAllowed" });
   } catch (err) {
     console.error("Error starting recording:", err);
     if (err.name === "NotAllowedError") {
@@ -361,14 +374,4 @@ async function stopRecording() {
 // Cleanup on page unload
 window.addEventListener("beforeunload", () => {
   stopRecording();
-});
-
-// Handle messages from the extension
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "check-recording-status") {
-    sendResponse({
-      isRecording: recorder?.state === "recording",
-    });
-  }
-  return true;
 });

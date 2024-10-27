@@ -1,4 +1,3 @@
-// // content.js
 // let cameraContainer = null;
 // let videoElement = null;
 // let cameraStream = null;
@@ -113,6 +112,7 @@
 // window.addEventListener("beforeunload", () => {
 //   stopCamera();
 // });
+
 /////////// test ///////////////
 
 let cameraContainer = null;

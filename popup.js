@@ -1,6 +1,7 @@
 // let isRecording = false;
 // let recordingTabId = null; // Track which tab is being recorded
 // let includeCamera = false; // Track whether to include the camera
+// let includeAudio = true; // Track whether to include audio
 
 // function updateButtonState(recording) {
 //   const button = document.getElementById("recordButton");
@@ -8,22 +9,48 @@
 //   button.textContent = isRecording ? "Stop Recording" : "Record Tab";
 //   button.className = isRecording ? "recording" : "";
 
-//   // Disable the 'Include Camera' toggle when recording
+//   // Disable the 'Include Camera' and 'Include Audio' toggles when recording
 //   document.getElementById("cameraToggle").disabled = isRecording;
+//   document.getElementById("audioToggle").disabled = isRecording;
 // }
 
-// // Check current recording state when popup opens
-// chrome.runtime.sendMessage({ action: "getRecordingState" }, (response) => {
-//   if (response && response.isRecording !== undefined) {
-//     updateButtonState(response.isRecording);
-//   }
+// function resetFlags() {
+//   includeCamera = false;
+//   includeAudio = true; // Reset to default value
+// }
+
+// function closePopup() {
+//   window.close();
+// }
+
+// // On popup load, get the current recording state and settings
+// document.addEventListener("DOMContentLoaded", () => {
+//   chrome.storage.local.get(
+//     ["isRecording", "includeCamera", "includeAudio", "recordingTabId"],
+//     (data) => {
+//       if (data) {
+//         isRecording = data.isRecording || false;
+//         includeCamera = data.includeCamera || false;
+//         includeAudio =
+//           data.includeAudio !== undefined ? data.includeAudio : true;
+//         recordingTabId = data.recordingTabId || null;
+
+//         updateButtonState(isRecording);
+
+//         // Set the toggles to reflect the stored settings
+//         document.getElementById("cameraToggle").checked = includeCamera;
+//         document.getElementById("audioToggle").checked = includeAudio;
+//       }
+//     }
+//   );
 // });
 
 // document.getElementById("recordButton").addEventListener("click", async () => {
 //   try {
 //     if (!isRecording) {
-//       // Get the state of the camera toggle
+//       // Get the state of the camera and audio toggles
 //       includeCamera = document.getElementById("cameraToggle").checked;
+//       includeAudio = document.getElementById("audioToggle").checked;
 
 //       // Get current tab
 //       const [tab] = await chrome.tabs.query({
@@ -39,34 +66,20 @@
 //         {
 //           action: "startRecording",
 //           tabId: tab.id,
+//           includeCamera: includeCamera, // Pass the camera preference
+//           includeAudio: includeAudio, // Pass the audio preference
 //         },
 //         (response) => {
 //           if (response && response.success) {
-//             // Wait for screen sharing permission
-//             chrome.runtime.onMessage.addListener(function listener(
-//               request,
-//               sender,
-//               sendResponse
-//             ) {
-//               if (request.action === "screenShareAllowed") {
-//                 if (includeCamera) {
-//                   // Inject content script and start camera
-//                   injectCameraScript(tab.id);
-//                 }
-//                 chrome.runtime.onMessage.removeListener(listener);
-//               } else if (request.action === "recordingCancelled") {
-//                 // Handle recording cancellation
-//                 alert(`Recording cancelled: ${request.reason}`);
-//                 updateButtonState(false);
-//                 chrome.runtime.onMessage.removeListener(listener);
-//               }
-//             });
 //             // Update the button state to recording
 //             updateButtonState(true);
+//             // Close the popup after starting the recording
+//             closePopup();
 //           } else {
 //             // Handle error starting recording
 //             alert(`Failed to start recording: ${response.error}`);
 //             updateButtonState(false);
+//             resetFlags();
 //           }
 //         }
 //       );
@@ -89,8 +102,8 @@
 //         }
 //       }
 
-//       // Reset the includeCamera flag
-//       includeCamera = false;
+//       // Reset flags
+//       resetFlags();
 
 //       // Update the button state to not recording
 //       updateButtonState(false);
@@ -116,38 +129,18 @@
 //     }
 
 //     // Reset flags and UI
-//     includeCamera = false;
+//     resetFlags();
 //     updateButtonState(false);
 //   }
 // });
 
-// // Helper function to inject the camera script
-// async function injectCameraScript(tabId) {
-//   try {
-//     await chrome.scripting.executeScript({
-//       target: { tabId: tabId },
-//       files: ["content.js"],
-//     });
-//     await chrome.tabs.sendMessage(tabId, { action: "startCamera" });
-//   } catch (error) {
-//     console.log("Could not inject content script, continuing with recording");
-//   }
-// }
-
-// // Listen for recording cancelled messages
-// chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-//   if (request.action === "recordingCancelled") {
-//     console.log("Recording cancelled:", request.reason);
-//     alert(`Recording cancelled: ${request.reason}`);
-//     updateButtonState(false);
-//   }
-// });
-
-// testing
+////////////////////////////////////////////////////////////
+// popup.js
 
 let isRecording = false;
 let recordingTabId = null; // Track which tab is being recorded
 let includeCamera = false; // Track whether to include the camera
+let includeAudio = true; // Track whether to include audio
 
 function updateButtonState(recording) {
   const button = document.getElementById("recordButton");
@@ -155,22 +148,48 @@ function updateButtonState(recording) {
   button.textContent = isRecording ? "Stop Recording" : "Record Tab";
   button.className = isRecording ? "recording" : "";
 
-  // Disable the 'Include Camera' toggle when recording
+  // Disable the 'Include Camera' and 'Include Audio' toggles when recording
   document.getElementById("cameraToggle").disabled = isRecording;
+  document.getElementById("audioToggle").disabled = isRecording;
 }
 
-// Check current recording state when popup opens
-chrome.runtime.sendMessage({ action: "getRecordingState" }, (response) => {
-  if (response && response.isRecording !== undefined) {
-    updateButtonState(response.isRecording);
-  }
+function resetFlags() {
+  includeCamera = false;
+  includeAudio = true; // Reset to default value
+}
+
+function closePopup() {
+  window.close();
+}
+
+// On popup load, get the current recording state and settings
+document.addEventListener("DOMContentLoaded", () => {
+  chrome.storage.local.get(
+    ["isRecording", "includeCamera", "includeAudio", "recordingTabId"],
+    (data) => {
+      if (data) {
+        isRecording = data.isRecording || false;
+        includeCamera = data.includeCamera || false;
+        includeAudio =
+          data.includeAudio !== undefined ? data.includeAudio : true;
+        recordingTabId = data.recordingTabId || null;
+
+        updateButtonState(isRecording);
+
+        // Set the toggles to reflect the stored settings
+        document.getElementById("cameraToggle").checked = includeCamera;
+        document.getElementById("audioToggle").checked = includeAudio;
+      }
+    }
+  );
 });
 
 document.getElementById("recordButton").addEventListener("click", async () => {
   try {
     if (!isRecording) {
-      // Get the state of the camera toggle
+      // Get the state of the camera and audio toggles
       includeCamera = document.getElementById("cameraToggle").checked;
+      includeAudio = document.getElementById("audioToggle").checked;
 
       // Get current tab
       const [tab] = await chrome.tabs.query({
@@ -186,34 +205,20 @@ document.getElementById("recordButton").addEventListener("click", async () => {
         {
           action: "startRecording",
           tabId: tab.id,
+          includeCamera: includeCamera, // Pass the camera preference
+          includeAudio: includeAudio, // Pass the audio preference
         },
         (response) => {
           if (response && response.success) {
-            // Wait for screen sharing permission
-            chrome.runtime.onMessage.addListener(function listener(
-              request,
-              sender,
-              sendResponse
-            ) {
-              if (request.action === "screenShareAllowed") {
-                if (includeCamera) {
-                  // Inject content script and start camera
-                  injectCameraScript(tab.id);
-                }
-                chrome.runtime.onMessage.removeListener(listener);
-              } else if (request.action === "recordingCancelled") {
-                // Handle recording cancellation
-                alert(`Recording cancelled: ${request.reason}`);
-                updateButtonState(false);
-                chrome.runtime.onMessage.removeListener(listener);
-              }
-            });
             // Update the button state to recording
             updateButtonState(true);
+            // Close the popup after starting the recording
+            closePopup();
           } else {
             // Handle error starting recording
             alert(`Failed to start recording: ${response.error}`);
             updateButtonState(false);
+            resetFlags();
           }
         }
       );
@@ -236,8 +241,8 @@ document.getElementById("recordButton").addEventListener("click", async () => {
         }
       }
 
-      // Reset the includeCamera flag
-      includeCamera = false;
+      // Reset flags
+      resetFlags();
 
       // Update the button state to not recording
       updateButtonState(false);
@@ -263,29 +268,7 @@ document.getElementById("recordButton").addEventListener("click", async () => {
     }
 
     // Reset flags and UI
-    includeCamera = false;
-    updateButtonState(false);
-  }
-});
-
-// Helper function to inject the camera script
-async function injectCameraScript(tabId) {
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId: tabId },
-      files: ["content.js"],
-    });
-    await chrome.tabs.sendMessage(tabId, { action: "startCamera" });
-  } catch (error) {
-    console.log("Could not inject content script, continuing with recording");
-  }
-}
-
-// Listen for recording cancelled messages
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "recordingCancelled") {
-    console.log("Recording cancelled:", request.reason);
-    alert(`Recording cancelled: ${request.reason}`);
+    resetFlags();
     updateButtonState(false);
   }
 });

@@ -1,8 +1,4 @@
-// let isRecording = false;
-// let activeTabId = null;
 // let offscreenPort = null;
-// let recordingTabId = null; // Added to track the recording tab
-// let cleanupTimeout = null;
 
 // async function createOffscreenDocument() {
 //   if (await chrome.offscreen.hasDocument()) {
@@ -27,7 +23,7 @@
 // }
 
 // // Helper function to stop camera in the recording tab
-// async function stopCameraInRecordingTab() {
+// async function stopCameraInRecordingTab(recordingTabId) {
 //   if (recordingTabId) {
 //     try {
 //       // Try to execute toggleRecording message in the original tab
@@ -40,23 +36,18 @@
 //   }
 // }
 
-// // async function cleanupAfterCancellation() {
-// //   console.log("User cancelled screen sharing. Cleaning up...");
-// //   if (await chrome.offscreen.hasDocument()) {
-// //     await chrome.offscreen.closeDocument();
-// //   }
-// //   isRecording = false;
-// //   activeTabId = null;
-// //   chrome.action.setBadgeText({ text: "" });
-// // }
-
 // async function cleanupAfterCancellation(reason) {
 //   console.log(`Recording cancelled. Reason: ${reason}. Cleaning up...`);
 //   if (await chrome.offscreen.hasDocument()) {
 //     await chrome.offscreen.closeDocument();
 //   }
-//   isRecording = false;
-//   activeTabId = null;
+//   // Reset state in chrome.storage
+//   chrome.storage.local.set({
+//     isRecording: false,
+//     includeCamera: false,
+//     includeAudio: true,
+//     recordingTabId: null,
+//   });
 //   chrome.action.setBadgeText({ text: "" });
 // }
 
@@ -64,8 +55,11 @@
 //   if (request.action === "startRecording") {
 //     (async () => {
 //       try {
-//         activeTabId = request.tabId;
-//         recordingTabId = request.tabId; // Store the recording tab ID
+//         const activeTabId = request.tabId;
+//         const recordingTabId = request.tabId; // Store the recording tab ID
+//         const includeCamera = request.includeCamera;
+//         const includeAudio = request.includeAudio;
+
 //         console.log("Recording started in tab:", activeTabId);
 
 //         await createOffscreenDocument();
@@ -77,17 +71,33 @@
 
 //         offscreenPort.postMessage({
 //           type: "start-screen-recording",
-//           data: streamId,
+//           data: {
+//             streamId: streamId,
+//             includeAudio: includeAudio, // Pass the audio preference
+//           },
 //         });
 
-//         isRecording = true;
+//         // Update state in chrome.storage
+//         chrome.storage.local.set({
+//           isRecording: true,
+//           includeCamera: includeCamera,
+//           includeAudio: includeAudio,
+//           recordingTabId: recordingTabId,
+//         });
+
 //         chrome.action.setBadgeText({ text: "REC" });
 //         chrome.action.setBadgeBackgroundColor({ color: "#FF0000" });
 //         // After successfully starting recording
 //         sendResponse({ success: true });
 //       } catch (error) {
 //         console.error("Error in startRecording:", error);
-//         isRecording = false;
+//         // Update state in chrome.storage
+//         chrome.storage.local.set({
+//           isRecording: false,
+//           includeCamera: false,
+//           includeAudio: true,
+//           recordingTabId: null,
+//         });
 //         // Notify of error
 //         sendResponse({ success: false, error: error.message });
 //       }
@@ -95,58 +105,102 @@
 //     return true;
 //   }
 
-//   // Handle case where recording was cancelled in offscreen document
 //   if (request.action === "recordingCancelled") {
 //     // Then stop the camera
-//     stopCameraInRecordingTab();
-//     // Handle case where recording was cancelled in offscreen document.. show alert to user.
-//     cleanupAfterCancellation(request.reason);
+//     chrome.storage.local.get(
+//       ["includeCamera", "recordingTabId"],
+//       ({ includeCamera, recordingTabId }) => {
+//         if (includeCamera) {
+//           stopCameraInRecordingTab(recordingTabId);
+//         }
+//         // Handle cancellation
+//         cleanupAfterCancellation(request.reason);
+//       }
+//     );
 //     return true;
 //   }
 
 //   if (request.action === "screenShareAllowed") {
-//     // Relay this message to popup.js
-//     chrome.runtime.sendMessage({ action: "screenShareAllowed" });
+//     // Get the includeCamera and recordingTabId from chrome.storage.local
+//     chrome.storage.local.get(
+//       ["includeCamera", "recordingTabId"],
+//       async (data) => {
+//         const includeCamera = data.includeCamera;
+//         const recordingTabId = data.recordingTabId;
+
+//         if (includeCamera && recordingTabId) {
+//           // Inject content script and start camera
+//           try {
+//             await chrome.scripting.executeScript({
+//               target: { tabId: recordingTabId },
+//               files: ["content.js"],
+//             });
+//             await chrome.tabs.sendMessage(recordingTabId, {
+//               action: "startCamera",
+//             });
+//           } catch (error) {
+//             console.log("Could not inject content script:", error);
+//           }
+//         }
+//       }
+//     );
+
+//     // No need to relay the message to popup.js anymore
+//     return true;
 //   }
 
+//   // Stop recording
 //   if (request.action === "stopRecording") {
 //     // Don't check current tab, just stop recording
-//     console.log("Recording stopped. Original recording tab:", recordingTabId);
+//     console.log("Stopping recording");
 
-//     if (offscreenPort) {
-//       offscreenPort.postMessage({ type: "stop-screen-recording" });
-
-//       setTimeout(() => {
+//     // Get the current state from chrome.storage
+//     chrome.storage.local.get(
+//       ["includeCamera", "recordingTabId"],
+//       ({ includeCamera, recordingTabId }) => {
 //         if (offscreenPort) {
-//           offscreenPort.disconnect();
-//           offscreenPort = null;
+//           offscreenPort.postMessage({ type: "stop-screen-recording" });
+
+//           setTimeout(() => {
+//             if (offscreenPort) {
+//               offscreenPort.disconnect();
+//               offscreenPort = null;
+//             }
+//           }, 500);
 //         }
-//       }, 500);
-//     }
 
-//     // Then stop the camera
-//     stopCameraInRecordingTab();
+//         // Then stop the camera if it was started
+//         if (includeCamera) {
+//           stopCameraInRecordingTab(recordingTabId);
+//         }
 
-//     isRecording = false;
-//     chrome.action.setBadgeText({ text: "" });
+//         // Reset state in chrome.storage
+//         chrome.storage.local.set({
+//           isRecording: false,
+//           includeCamera: false,
+//           includeAudio: true,
+//           recordingTabId: null,
+//         });
+
+//         chrome.action.setBadgeText({ text: "" });
+//       }
+//     );
+
 //     return true;
 //   }
 
 //   if (request.action === "getRecordingState") {
-//     sendResponse({
-//       isRecording,
-//       recordingTabId, // Include the recording tab ID in the response
-//     });
-//     return true;
+//     // Get state from chrome.storage
+//     chrome.storage.local.get(
+//       ["isRecording", "includeCamera", "includeAudio", "recordingTabId"],
+//       (data) => {
+//         sendResponse(data);
+//       }
+//     );
+//     return true; // Indicates that sendResponse will be called asynchronously
 //   }
 
 //   if (request.type === "download-recording") {
-//     if (!recordingTabId) {
-//       // Use recordingTabId instead of activeTabId
-//       console.error("No recording tab ID found for download");
-//       return true;
-//     }
-
 //     try {
 //       if (!request.data) {
 //         throw new Error("No recording data received");
@@ -170,8 +224,6 @@
 //             console.error("Download failed:", chrome.runtime.lastError);
 //           } else {
 //             console.log("Download started with ID:", downloadId);
-//             recordingTabId = null; // Clear recording tab ID after successful download
-//             activeTabId = null;
 
 //             chrome.runtime
 //               .sendMessage({
@@ -199,12 +251,13 @@
 //   }
 
 //   if (request.action === "updateButton") {
-//     isRecording = request.isRecording;
-//     chrome.action.setBadgeText({
-//       text: isRecording ? "REC" : "",
-//     });
-//     chrome.action.setBadgeBackgroundColor({
-//       color: "#FF0000",
+//     chrome.storage.local.get(["isRecording"], ({ isRecording }) => {
+//       chrome.action.setBadgeText({
+//         text: isRecording ? "REC" : "",
+//       });
+//       chrome.action.setBadgeBackgroundColor({
+//         color: "#FF0000",
+//       });
 //     });
 //     return true;
 //   }
@@ -213,35 +266,44 @@
 
 // // Add handler for tab removal
 // chrome.tabs.onRemoved.addListener((tabId) => {
-//   if (tabId === recordingTabId) {
-//     // Recording tab was closed, stop recording
-//     if (offscreenPort) {
-//       offscreenPort.postMessage({ type: "stop-screen-recording" });
-//       setTimeout(() => {
+//   // Get the current state from chrome.storage
+//   chrome.storage.local.get(
+//     ["recordingTabId", "includeCamera"],
+//     ({ recordingTabId, includeCamera }) => {
+//       if (tabId === recordingTabId) {
+//         // Recording tab was closed, stop recording
 //         if (offscreenPort) {
-//           offscreenPort.disconnect();
-//           offscreenPort = null;
+//           offscreenPort.postMessage({ type: "stop-screen-recording" });
+//           setTimeout(() => {
+//             if (offscreenPort) {
+//               offscreenPort.disconnect();
+//               offscreenPort = null;
+//             }
+//           }, 500);
 //         }
-//       }, 500);
+
+//         // Stop the camera if possible
+//         if (includeCamera) {
+//           stopCameraInRecordingTab(recordingTabId);
+//         }
+
+//         // Reset state in chrome.storage
+//         chrome.storage.local.set({
+//           isRecording: false,
+//           includeCamera: false,
+//           includeAudio: true,
+//           recordingTabId: null,
+//         });
+
+//         chrome.action.setBadgeText({ text: "" });
+//       }
 //     }
-
-//     // Stop the camera if possible
-//     stopCameraInRecordingTab();
-
-//     isRecording = false;
-//     chrome.action.setBadgeText({ text: "" });
-//     recordingTabId = null;
-//   }
+//   );
 // });
-
 ////////////////////////////////////////////////////////////
 //test
 
-let isRecording = false;
-let activeTabId = null;
 let offscreenPort = null;
-let recordingTabId = null; // Added to track the recording tab
-let cleanupTimeout = null;
 
 async function createOffscreenDocument() {
   if (await chrome.offscreen.hasDocument()) {
@@ -266,7 +328,7 @@ function connectToOffscreen() {
 }
 
 // Helper function to stop camera in the recording tab
-async function stopCameraInRecordingTab() {
+async function stopCameraInRecordingTab(recordingTabId) {
   if (recordingTabId) {
     try {
       // Try to execute toggleRecording message in the original tab
@@ -284,8 +346,13 @@ async function cleanupAfterCancellation(reason) {
   if (await chrome.offscreen.hasDocument()) {
     await chrome.offscreen.closeDocument();
   }
-  isRecording = false;
-  activeTabId = null;
+  // Reset state in chrome.storage
+  chrome.storage.local.set({
+    isRecording: false,
+    includeCamera: false,
+    includeAudio: true,
+    recordingTabId: null,
+  });
   chrome.action.setBadgeText({ text: "" });
 }
 
@@ -293,8 +360,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "startRecording") {
     (async () => {
       try {
-        activeTabId = request.tabId;
-        recordingTabId = request.tabId; // Store the recording tab ID
+        const activeTabId = request.tabId;
+        const recordingTabId = request.tabId; // Store the recording tab ID
+        const includeCamera = request.includeCamera;
+        const includeAudio = request.includeAudio;
+
         console.log("Recording started in tab:", activeTabId);
 
         await createOffscreenDocument();
@@ -306,17 +376,33 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
         offscreenPort.postMessage({
           type: "start-screen-recording",
-          data: streamId,
+          data: {
+            streamId: streamId,
+            includeAudio: includeAudio, // Pass the audio preference
+          },
         });
 
-        isRecording = true;
+        // Update state in chrome.storage
+        chrome.storage.local.set({
+          isRecording: true,
+          includeCamera: includeCamera,
+          includeAudio: includeAudio,
+          recordingTabId: recordingTabId,
+        });
+
         chrome.action.setBadgeText({ text: "REC" });
         chrome.action.setBadgeBackgroundColor({ color: "#FF0000" });
         // After successfully starting recording
         sendResponse({ success: true });
       } catch (error) {
         console.error("Error in startRecording:", error);
-        isRecording = false;
+        // Update state in chrome.storage
+        chrome.storage.local.set({
+          isRecording: false,
+          includeCamera: false,
+          includeAudio: true,
+          recordingTabId: null,
+        });
         // Notify of error
         sendResponse({ success: false, error: error.message });
       }
@@ -324,58 +410,102 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // Handle case where recording was cancelled in offscreen document
   if (request.action === "recordingCancelled") {
     // Then stop the camera
-    stopCameraInRecordingTab();
-    // Handle case where recording was cancelled in offscreen document.. show alert to user.
-    cleanupAfterCancellation(request.reason);
+    chrome.storage.local.get(
+      ["includeCamera", "recordingTabId"],
+      ({ includeCamera, recordingTabId }) => {
+        if (includeCamera) {
+          stopCameraInRecordingTab(recordingTabId);
+        }
+        // Handle cancellation
+        cleanupAfterCancellation(request.reason);
+      }
+    );
     return true;
   }
 
   if (request.action === "screenShareAllowed") {
-    // Relay this message to popup.js
-    chrome.runtime.sendMessage({ action: "screenShareAllowed" });
+    // Get the includeCamera and recordingTabId from chrome.storage.local
+    chrome.storage.local.get(
+      ["includeCamera", "recordingTabId"],
+      async (data) => {
+        const includeCamera = data.includeCamera;
+        const recordingTabId = data.recordingTabId;
+
+        if (includeCamera && recordingTabId) {
+          // Inject content script and start camera
+          try {
+            await chrome.scripting.executeScript({
+              target: { tabId: recordingTabId },
+              files: ["content.js"],
+            });
+            await chrome.tabs.sendMessage(recordingTabId, {
+              action: "startCamera",
+            });
+          } catch (error) {
+            console.log("Could not inject content script:", error);
+          }
+        }
+      }
+    );
+
+    // No need to relay the message to popup.js anymore
+    return true;
   }
 
+  // Stop recording
   if (request.action === "stopRecording") {
     // Don't check current tab, just stop recording
-    console.log("Recording stopped. Original recording tab:", recordingTabId);
+    console.log("Stopping recording");
 
-    if (offscreenPort) {
-      offscreenPort.postMessage({ type: "stop-screen-recording" });
-
-      setTimeout(() => {
+    // Get the current state from chrome.storage
+    chrome.storage.local.get(
+      ["includeCamera", "recordingTabId"],
+      ({ includeCamera, recordingTabId }) => {
         if (offscreenPort) {
-          offscreenPort.disconnect();
-          offscreenPort = null;
+          offscreenPort.postMessage({ type: "stop-screen-recording" });
+
+          setTimeout(() => {
+            if (offscreenPort) {
+              offscreenPort.disconnect();
+              offscreenPort = null;
+            }
+          }, 500);
         }
-      }, 500);
-    }
 
-    // Then stop the camera
-    stopCameraInRecordingTab();
+        // Then stop the camera if it was started
+        if (includeCamera) {
+          stopCameraInRecordingTab(recordingTabId);
+        }
 
-    isRecording = false;
-    chrome.action.setBadgeText({ text: "" });
+        // Reset state in chrome.storage
+        chrome.storage.local.set({
+          isRecording: false,
+          includeCamera: false,
+          includeAudio: true,
+          recordingTabId: null,
+        });
+
+        chrome.action.setBadgeText({ text: "" });
+      }
+    );
+
     return true;
   }
 
   if (request.action === "getRecordingState") {
-    sendResponse({
-      isRecording,
-      recordingTabId, // Include the recording tab ID in the response
-    });
-    return true;
+    // Get state from chrome.storage
+    chrome.storage.local.get(
+      ["isRecording", "includeCamera", "includeAudio", "recordingTabId"],
+      (data) => {
+        sendResponse(data);
+      }
+    );
+    return true; // Indicates that sendResponse will be called asynchronously
   }
 
   if (request.type === "download-recording") {
-    if (!recordingTabId) {
-      // Use recordingTabId instead of activeTabId
-      console.error("No recording tab ID found for download");
-      return true;
-    }
-
     try {
       if (!request.data) {
         throw new Error("No recording data received");
@@ -399,8 +529,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             console.error("Download failed:", chrome.runtime.lastError);
           } else {
             console.log("Download started with ID:", downloadId);
-            recordingTabId = null; // Clear recording tab ID after successful download
-            activeTabId = null;
 
             chrome.runtime
               .sendMessage({
@@ -428,12 +556,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === "updateButton") {
-    isRecording = request.isRecording;
-    chrome.action.setBadgeText({
-      text: isRecording ? "REC" : "",
-    });
-    chrome.action.setBadgeBackgroundColor({
-      color: "#FF0000",
+    chrome.storage.local.get(["isRecording"], ({ isRecording }) => {
+      chrome.action.setBadgeText({
+        text: isRecording ? "REC" : "",
+      });
+      chrome.action.setBadgeBackgroundColor({
+        color: "#FF0000",
+      });
     });
     return true;
   }
@@ -442,23 +571,37 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // Add handler for tab removal
 chrome.tabs.onRemoved.addListener((tabId) => {
-  if (tabId === recordingTabId) {
-    // Recording tab was closed, stop recording
-    if (offscreenPort) {
-      offscreenPort.postMessage({ type: "stop-screen-recording" });
-      setTimeout(() => {
+  // Get the current state from chrome.storage
+  chrome.storage.local.get(
+    ["recordingTabId", "includeCamera"],
+    ({ recordingTabId, includeCamera }) => {
+      if (tabId === recordingTabId) {
+        // Recording tab was closed, stop recording
         if (offscreenPort) {
-          offscreenPort.disconnect();
-          offscreenPort = null;
+          offscreenPort.postMessage({ type: "stop-screen-recording" });
+          setTimeout(() => {
+            if (offscreenPort) {
+              offscreenPort.disconnect();
+              offscreenPort = null;
+            }
+          }, 500);
         }
-      }, 500);
+
+        // Stop the camera if possible
+        if (includeCamera) {
+          stopCameraInRecordingTab(recordingTabId);
+        }
+
+        // Reset state in chrome.storage
+        chrome.storage.local.set({
+          isRecording: false,
+          includeCamera: false,
+          includeAudio: true,
+          recordingTabId: null,
+        });
+
+        chrome.action.setBadgeText({ text: "" });
+      }
     }
-
-    // Stop the camera if possible
-    stopCameraInRecordingTab();
-
-    isRecording = false;
-    chrome.action.setBadgeText({ text: "" });
-    recordingTabId = null;
-  }
+  );
 });
