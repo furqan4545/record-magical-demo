@@ -69,12 +69,25 @@
 
 //     console.log("Combined stream:", combinedStream);
 
+//     // Adjust the MIME type and options based on includeAudio
+//     // Explicitly type 'options' as 'MediaRecorderOptions'
+//     let options;
+
+//     if (includeAudio) {
+//       options = {
+//         mimeType: "video/webm;codecs=vp8,opus",
+//         videoBitsPerSecond: 2500000,
+//         audioBitsPerSecond: 128000,
+//       };
+//     } else {
+//       options = {
+//         mimeType: "video/webm;codecs=vp8",
+//         videoBitsPerSecond: 2500000,
+//       };
+//     }
+
 //     // Create and start recorder
-//     recorder = new MediaRecorder(combinedStream, {
-//       mimeType: "video/webm;codecs=vp8,opus",
-//       videoBitsPerSecond: 2500000,
-//       audioBitsPerSecond: includeAudio ? 128000 : 0,
-//     });
+//     recorder = new MediaRecorder(combinedStream, options);
 
 //     data = [];
 
@@ -87,6 +100,11 @@
 
 //     recorder.onerror = (event) => {
 //       console.error("Recording error:", event.error);
+//       // Send error message to background.js
+//       chrome.runtime.sendMessage({
+//         action: "recordingError",
+//         error: event.error.message,
+//       });
 //     };
 
 //     recorder.onstop = async () => {
@@ -119,6 +137,10 @@
 //         reader.readAsDataURL(blob);
 //       } catch (error) {
 //         console.error("Error processing recording:", error);
+//         chrome.runtime.sendMessage({
+//           action: "recordingError",
+//           error: error.message,
+//         });
 //       }
 //     };
 
@@ -187,7 +209,7 @@
 //   stopRecording();
 // });
 
-///////////// test ///////////////
+//////////////////// test ///////////////
 
 let recorder = null;
 let data = [];
@@ -258,12 +280,25 @@ async function startRecording({ streamId, includeAudio }) {
 
     console.log("Combined stream:", combinedStream);
 
+    // Adjust the MIME type and options based on includeAudio
+    // Explicitly type 'options' as 'MediaRecorderOptions'
+    let options;
+
+    if (includeAudio) {
+      options = {
+        mimeType: "video/webm;codecs=vp8,opus",
+        videoBitsPerSecond: 2500000,
+        audioBitsPerSecond: 128000,
+      };
+    } else {
+      options = {
+        mimeType: "video/webm;codecs=vp8",
+        videoBitsPerSecond: 2500000,
+      };
+    }
+
     // Create and start recorder
-    recorder = new MediaRecorder(combinedStream, {
-      mimeType: "video/webm;codecs=vp8,opus",
-      videoBitsPerSecond: 2500000,
-      audioBitsPerSecond: includeAudio ? 128000 : 0,
-    });
+    recorder = new MediaRecorder(combinedStream, options);
 
     data = [];
 
@@ -276,6 +311,11 @@ async function startRecording({ streamId, includeAudio }) {
 
     recorder.onerror = (event) => {
       console.error("Recording error:", event.error);
+      // Send error message to background.js
+      chrome.runtime.sendMessage({
+        action: "recordingError",
+        error: event.error.message,
+      });
     };
 
     recorder.onstop = async () => {
@@ -308,6 +348,10 @@ async function startRecording({ streamId, includeAudio }) {
         reader.readAsDataURL(blob);
       } catch (error) {
         console.error("Error processing recording:", error);
+        chrome.runtime.sendMessage({
+          action: "recordingError",
+          error: error.message,
+        });
       }
     };
 

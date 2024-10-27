@@ -151,40 +151,66 @@
 
 //   // Stop recording
 //   if (request.action === "stopRecording") {
-//     // Don't check current tab, just stop recording
 //     console.log("Stopping recording");
 
 //     // Get the current state from chrome.storage
 //     chrome.storage.local.get(
 //       ["includeCamera", "recordingTabId"],
-//       ({ includeCamera, recordingTabId }) => {
-//         if (offscreenPort) {
-//           offscreenPort.postMessage({ type: "stop-screen-recording" });
+//       async ({ includeCamera, recordingTabId }) => {
+//         try {
+//           if (offscreenPort) {
+//             offscreenPort.postMessage({ type: "stop-screen-recording" });
 
-//           setTimeout(() => {
-//             if (offscreenPort) {
-//               offscreenPort.disconnect();
-//               offscreenPort = null;
-//             }
-//           }, 500);
+//             setTimeout(() => {
+//               if (offscreenPort) {
+//                 offscreenPort.disconnect();
+//                 offscreenPort = null;
+//               }
+//             }, 500);
+//           }
+
+//           // Then stop the camera if it was started
+//           if (includeCamera) {
+//             await stopCameraInRecordingTab(recordingTabId);
+//           }
+
+//           // Reset isRecording flag, but do not reset recordingTabId yet
+//           chrome.storage.local.set({
+//             isRecording: false,
+//             includeCamera: false,
+//             includeAudio: true,
+//             // Do not reset recordingTabId here
+//           });
+
+//           chrome.action.setBadgeText({ text: "" });
+//         } catch (error) {
+//           console.error("Error in stopRecording handler:", error);
+//           // Ensure the badge text is cleared even if an error occurs
+//           chrome.action.setBadgeText({ text: "" });
 //         }
-
-//         // Then stop the camera if it was started
-//         if (includeCamera) {
-//           stopCameraInRecordingTab(recordingTabId);
-//         }
-
-//         // Reset state in chrome.storage
-//         chrome.storage.local.set({
-//           isRecording: false,
-//           includeCamera: false,
-//           includeAudio: true,
-//           recordingTabId: null,
-//         });
-
-//         chrome.action.setBadgeText({ text: "" });
 //       }
 //     );
+
+//     return true;
+//   }
+
+//   if (request.action === "recordingError") {
+//     console.error("Recording error received:", request.error);
+//     // Reset the recording state in chrome.storage
+//     chrome.storage.local.set({
+//       isRecording: false,
+//       includeCamera: false,
+//       includeAudio: true,
+//       recordingTabId: null,
+//     });
+
+//     // Update the badge text
+//     chrome.action.setBadgeText({ text: "" });
+
+//     // Optionally, alert the user
+//     // Note: Be cautious with alerting from background scripts
+//     // You might consider sending a message to the popup or using notifications
+//     // alert(`Recording error: ${request.error}`);
 
 //     return true;
 //   }
@@ -194,7 +220,15 @@
 //     chrome.storage.local.get(
 //       ["isRecording", "includeCamera", "includeAudio", "recordingTabId"],
 //       (data) => {
-//         sendResponse(data);
+//         if (chrome.runtime.lastError) {
+//           console.error(
+//             "Error getting recording state:",
+//             chrome.runtime.lastError
+//           );
+//           sendResponse({ error: chrome.runtime.lastError.message });
+//         } else {
+//           sendResponse(data);
+//         }
 //       }
 //     );
 //     return true; // Indicates that sendResponse will be called asynchronously
@@ -205,6 +239,9 @@
 //       if (!request.data) {
 //         throw new Error("No recording data received");
 //       }
+
+//       // Ensure the badge text is cleared
+//       chrome.action.setBadgeText({ text: "" });
 
 //       const now = new Date();
 //       const timestamp = now
@@ -237,6 +274,8 @@
 //       );
 //     } catch (error) {
 //       console.error("Error initiating download:", error);
+//       // Ensure the badge text is cleared
+//       chrome.action.setBadgeText({ text: "" });
 //       chrome.runtime
 //         .sendMessage({
 //           action: "recordingError",
@@ -456,40 +495,66 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // Stop recording
   if (request.action === "stopRecording") {
-    // Don't check current tab, just stop recording
     console.log("Stopping recording");
 
     // Get the current state from chrome.storage
     chrome.storage.local.get(
       ["includeCamera", "recordingTabId"],
-      ({ includeCamera, recordingTabId }) => {
-        if (offscreenPort) {
-          offscreenPort.postMessage({ type: "stop-screen-recording" });
+      async ({ includeCamera, recordingTabId }) => {
+        try {
+          if (offscreenPort) {
+            offscreenPort.postMessage({ type: "stop-screen-recording" });
 
-          setTimeout(() => {
-            if (offscreenPort) {
-              offscreenPort.disconnect();
-              offscreenPort = null;
-            }
-          }, 500);
+            setTimeout(() => {
+              if (offscreenPort) {
+                offscreenPort.disconnect();
+                offscreenPort = null;
+              }
+            }, 500);
+          }
+
+          // Then stop the camera if it was started
+          if (includeCamera) {
+            await stopCameraInRecordingTab(recordingTabId);
+          }
+
+          // Reset isRecording flag, but do not reset recordingTabId yet
+          chrome.storage.local.set({
+            isRecording: false,
+            includeCamera: false,
+            includeAudio: true,
+            // Do not reset recordingTabId here
+          });
+
+          chrome.action.setBadgeText({ text: "" });
+        } catch (error) {
+          console.error("Error in stopRecording handler:", error);
+          // Ensure the badge text is cleared even if an error occurs
+          chrome.action.setBadgeText({ text: "" });
         }
-
-        // Then stop the camera if it was started
-        if (includeCamera) {
-          stopCameraInRecordingTab(recordingTabId);
-        }
-
-        // Reset state in chrome.storage
-        chrome.storage.local.set({
-          isRecording: false,
-          includeCamera: false,
-          includeAudio: true,
-          recordingTabId: null,
-        });
-
-        chrome.action.setBadgeText({ text: "" });
       }
     );
+
+    return true;
+  }
+
+  if (request.action === "recordingError") {
+    console.error("Recording error received:", request.error);
+    // Reset the recording state in chrome.storage
+    chrome.storage.local.set({
+      isRecording: false,
+      includeCamera: false,
+      includeAudio: true,
+      recordingTabId: null,
+    });
+
+    // Update the badge text
+    chrome.action.setBadgeText({ text: "" });
+
+    // Optionally, alert the user
+    // Note: Be cautious with alerting from background scripts
+    // You might consider sending a message to the popup or using notifications
+    // alert(`Recording error: ${request.error}`);
 
     return true;
   }
@@ -499,7 +564,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     chrome.storage.local.get(
       ["isRecording", "includeCamera", "includeAudio", "recordingTabId"],
       (data) => {
-        sendResponse(data);
+        if (chrome.runtime.lastError) {
+          console.error(
+            "Error getting recording state:",
+            chrome.runtime.lastError
+          );
+          sendResponse({ error: chrome.runtime.lastError.message });
+        } else {
+          sendResponse(data);
+        }
       }
     );
     return true; // Indicates that sendResponse will be called asynchronously
@@ -510,6 +583,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (!request.data) {
         throw new Error("No recording data received");
       }
+
+      // Ensure the badge text is cleared
+      chrome.action.setBadgeText({ text: "" });
 
       const now = new Date();
       const timestamp = now
@@ -542,6 +618,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       );
     } catch (error) {
       console.error("Error initiating download:", error);
+      // Ensure the badge text is cleared
+      chrome.action.setBadgeText({ text: "" });
       chrome.runtime
         .sendMessage({
           action: "recordingError",
