@@ -120,6 +120,39 @@
 //     return true;
 //   }
 
+//   if (request.action === "recordingStoppedByUser") {
+//     console.log("Recording was stopped by the user via screen share stop");
+
+//     // Get the current state from chrome.storage
+//     chrome.storage.local.get(
+//       ["includeCamera", "recordingTabId"],
+//       async ({ includeCamera, recordingTabId }) => {
+//         try {
+//           // Then stop the camera if it was started
+//           if (includeCamera) {
+//             await stopCameraInRecordingTab(recordingTabId);
+//           }
+
+//           // Reset isRecording flag and other state variables
+//           chrome.storage.local.set({
+//             isRecording: false,
+//             includeCamera: false,
+//             includeAudio: true,
+//             recordingTabId: null,
+//           });
+
+//           chrome.action.setBadgeText({ text: "" });
+//         } catch (error) {
+//           console.error("Error in recordingStoppedByUser handler:", error);
+//           // Ensure the badge text is cleared even if an error occurs
+//           chrome.action.setBadgeText({ text: "" });
+//         }
+//       }
+//     );
+
+//     return true;
+//   }
+
 //   if (request.action === "screenShareAllowed") {
 //     // Get the includeCamera and recordingTabId from chrome.storage.local
 //     chrome.storage.local.get(
@@ -461,6 +494,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         cleanupAfterCancellation(request.reason);
       }
     );
+    return true;
+  }
+
+  if (request.action === "recordingStoppedByUser") {
+    console.log("Recording was stopped by the user via screen share stop");
+
+    // Get the current state from chrome.storage
+    chrome.storage.local.get(
+      ["includeCamera", "recordingTabId"],
+      async ({ includeCamera, recordingTabId }) => {
+        try {
+          // Then stop the camera if it was started
+          if (includeCamera) {
+            await stopCameraInRecordingTab(recordingTabId);
+          }
+
+          // Reset isRecording flag and other state variables
+          chrome.storage.local.set({
+            isRecording: false,
+            includeCamera: false,
+            includeAudio: true,
+            recordingTabId: null,
+          });
+
+          chrome.action.setBadgeText({ text: "" });
+        } catch (error) {
+          console.error("Error in recordingStoppedByUser handler:", error);
+          // Ensure the badge text is cleared even if an error occurs
+          chrome.action.setBadgeText({ text: "" });
+        }
+      }
+    );
+
     return true;
   }
 

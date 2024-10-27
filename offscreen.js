@@ -45,6 +45,13 @@
 
 //     console.log("Display stream obtained:", displayStream);
 
+//     // Listen for 'ended' event on the display stream
+//     displayStream.getVideoTracks()[0].addEventListener("ended", () => {
+//       console.log("Display stream ended by user");
+//       // Automatically stop recording
+//       stopRecording();
+//     });
+
 //     // Initialize combinedStream with displayStream
 //     combinedStream = new MediaStream([...displayStream.getTracks()]);
 
@@ -199,6 +206,11 @@
 
 //     displayStream = null;
 //     combinedStream = null;
+
+//     // Notify background script that recording has stopped
+//     chrome.runtime.sendMessage({
+//       action: "recordingStoppedByUser",
+//     });
 //   } catch (error) {
 //     console.error("Error in stopRecording:", error);
 //   }
@@ -255,6 +267,13 @@ async function startRecording({ streamId, includeAudio }) {
     });
 
     console.log("Display stream obtained:", displayStream);
+
+    // Listen for 'ended' event on the display stream
+    displayStream.getVideoTracks()[0].addEventListener("ended", () => {
+      console.log("Display stream ended by user");
+      // Automatically stop recording
+      stopRecording();
+    });
 
     // Initialize combinedStream with displayStream
     combinedStream = new MediaStream([...displayStream.getTracks()]);
@@ -410,6 +429,11 @@ async function stopRecording() {
 
     displayStream = null;
     combinedStream = null;
+
+    // Notify background script that recording has stopped
+    chrome.runtime.sendMessage({
+      action: "recordingStoppedByUser",
+    });
   } catch (error) {
     console.error("Error in stopRecording:", error);
   }
