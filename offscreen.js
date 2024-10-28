@@ -221,14 +221,20 @@
 //   stopRecording();
 // });
 
-//////////////////// test ///////////////
+//////////////////// This is for uploading to Azure Blob Storage /////////////////
 
 let recorder = null;
-let data = [];
 let port = null;
 let mediaStream = null;
 let combinedStream = null;
 let displayStream = null;
+
+let uploadUrl = null;
+let baseBlobUrl = null;
+let sasToken = null;
+let blockIds = []; // Array to store block IDs
+let blockCount = 0; // Counter for block IDs
+let blockUploadPromises = []; // Array to store block upload promises
 
 chrome.runtime.onConnect.addListener((connectionPort) => {
   if (connectionPort.name === "offscreen") {
@@ -247,6 +253,21 @@ async function handleMessage(message) {
   }
 }
 
+async function getUploadUrl() {
+  try {
+    const response = await fetch("http://localhost:3500/get-sas-token"); // Your server endpoint
+    if (!response.ok) {
+      throw new Error("Failed to obtain SAS token");
+    }
+    const data = await response.json();
+    console.log("Received upload URL:", data.uploadUrl); // Log the upload URL
+    return data.uploadUrl;
+  } catch (error) {
+    console.error("Error obtaining upload URL:", error);
+    throw error;
+  }
+}
+
 async function startRecording({ streamId, includeAudio }) {
   try {
     if (recorder?.state === "recording") {
@@ -256,6 +277,19 @@ async function startRecording({ streamId, includeAudio }) {
 
     console.log("Starting recording with streamId:", streamId);
 
+    // Get the upload URL
+    uploadUrl = await getUploadUrl();
+
+    // Parse the upload URL to extract the base blob URL and SAS token
+    const [baseUrl, sas] = uploadUrl.split("?");
+    baseBlobUrl = baseUrl;
+    sasToken = sas;
+
+    // Initialize blockIds array, blockCount, and blockUploadPromises
+    blockIds = [];
+    blockCount = 0;
+    blockUploadPromises = [];
+
     // Get display stream using getDisplayMedia
     displayStream = await navigator.mediaDevices.getDisplayMedia({
       video: {
@@ -263,7 +297,7 @@ async function startRecording({ streamId, includeAudio }) {
         logicalSurface: true,
         cursor: "always",
       },
-      audio: false, // Do not include system audio
+      audio: false,
     });
 
     console.log("Display stream obtained:", displayStream);
@@ -300,7 +334,6 @@ async function startRecording({ streamId, includeAudio }) {
     console.log("Combined stream:", combinedStream);
 
     // Adjust the MIME type and options based on includeAudio
-    // Explicitly type 'options' as 'MediaRecorderOptions'
     let options;
 
     if (includeAudio) {
@@ -319,12 +352,44 @@ async function startRecording({ streamId, includeAudio }) {
     // Create and start recorder
     recorder = new MediaRecorder(combinedStream, options);
 
-    data = [];
-
     recorder.ondataavailable = (event) => {
       if (event.data && event.data.size > 0) {
-        console.log("Chunk size:", event.data.size);
-        data.push(event.data);
+        blockCount++;
+        const blockIdString = "block-" + String(blockCount).padStart(6, "0");
+        const blockId = btoa(blockIdString);
+        blockIds.push(blockId);
+
+        const blockUrl = `${baseBlobUrl}?comp=block&blockid=${encodeURIComponent(
+          blockId
+        )}&${sasToken}`;
+
+        // Start the upload and store the promise
+        const uploadPromise = fetch(blockUrl, {
+          method: "PUT",
+          body: event.data,
+          headers: {
+            "Content-Type": "application/octet-stream",
+          },
+        })
+          .then(async (uploadResponse) => {
+            if (!uploadResponse.ok) {
+              const errorText = await uploadResponse.text();
+              console.error("Block upload error:", errorText);
+              throw new Error("Block upload failed");
+            } else {
+              console.log(
+                `Uploaded block ${blockIdString}, size: ${event.data.size}`
+              );
+            }
+          })
+          .catch(async (error) => {
+            console.error("Error uploading block:", error);
+            // Handle errors, possibly stop recording
+            await stopRecording();
+          });
+
+        // Add the upload promise to the array
+        blockUploadPromises.push(uploadPromise);
       }
     };
 
@@ -339,34 +404,42 @@ async function startRecording({ streamId, includeAudio }) {
 
     recorder.onstop = async () => {
       try {
-        console.log("Recording stopped, processing data");
-        console.log("Number of chunks:", data.length);
+        console.log("Recording stopped");
 
-        if (!data.length) {
-          throw new Error("No recording data available");
+        // Wait for all block uploads to complete
+        await Promise.all(blockUploadPromises);
+
+        // Commit the block list
+        const blockListXml =
+          '<?xml version="1.0" encoding="utf-8"?><BlockList>' +
+          blockIds.map((id) => `<Latest>${id}</Latest>`).join("") +
+          "</BlockList>";
+
+        const blockListUrl = `${baseBlobUrl}?comp=blocklist&${sasToken}`;
+
+        const commitResponse = await fetch(blockListUrl, {
+          method: "PUT",
+          body: blockListXml,
+          headers: {
+            "Content-Type": "application/xml",
+          },
+        });
+
+        if (!commitResponse.ok) {
+          const errorText = await commitResponse.text();
+          console.error("Block list commit error:", errorText);
+          throw new Error("Failed to commit block list");
         }
 
-        const blob = new Blob(data, { type: "video/webm" });
-        console.log("Final blob size:", blob.size);
+        console.log("Block list committed successfully");
 
-        const reader = new FileReader();
-
-        reader.onload = () => {
-          const base64data = reader.result.split(",")[1];
-          chrome.runtime.sendMessage({
-            type: "download-recording",
-            data: base64data,
-            mimeType: "video/webm",
-          });
-        };
-
-        reader.onerror = (error) => {
-          console.error("Error reading blob:", error);
-        };
-
-        reader.readAsDataURL(blob);
+        // Notify background script that recording has stopped
+        chrome.runtime.sendMessage({
+          action: "recordingStopped",
+          downloadUrl: `${baseBlobUrl}?${sasToken}`, // Include SAS token with 'r' permission
+        });
       } catch (error) {
-        console.error("Error processing recording:", error);
+        console.error("Error finalizing recording:", error);
         chrome.runtime.sendMessage({
           action: "recordingError",
           error: error.message,
@@ -389,7 +462,7 @@ async function startRecording({ streamId, includeAudio }) {
     } else {
       chrome.runtime.sendMessage({
         action: "recordingCancelled",
-        reason: "Unknown error",
+        reason: err.message || "Unknown error",
       });
     }
   }
@@ -430,10 +503,7 @@ async function stopRecording() {
     displayStream = null;
     combinedStream = null;
 
-    // Notify background script that recording has stopped
-    chrome.runtime.sendMessage({
-      action: "recordingStoppedByUser",
-    });
+    // blockIds will be processed in recorder.onstop
   } catch (error) {
     console.error("Error in stopRecording:", error);
   }

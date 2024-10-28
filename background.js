@@ -625,6 +625,43 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === "recordingStopped") {
+    console.log("Recording has been stopped and download initiated.");
+
+    // Optionally, generate a SAS token for download
+    const downloadUrl = request.downloadUrl;
+    console.log("Download URL:", downloadUrl);
+
+    // Initiate the download
+    chrome.downloads.download(
+      {
+        url: downloadUrl,
+        filename: `screen-recording_${Date.now()}.webm`,
+        saveAs: true,
+      },
+      (downloadId) => {
+        if (chrome.runtime.lastError) {
+          console.error("Download failed:", chrome.runtime.lastError);
+        } else {
+          console.log("Download started with ID:", downloadId);
+        }
+      }
+    );
+
+    // Reset the recording state in chrome.storage
+    chrome.storage.local.set({
+      isRecording: false,
+      includeCamera: false,
+      includeAudio: true,
+      recordingTabId: null,
+    });
+
+    // Update the badge text
+    chrome.action.setBadgeText({ text: "" });
+
+    return true;
+  }
+
   if (request.action === "getRecordingState") {
     // Get state from chrome.storage
     chrome.storage.local.get(
@@ -642,61 +679,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
     );
     return true; // Indicates that sendResponse will be called asynchronously
-  }
-
-  if (request.type === "download-recording") {
-    try {
-      if (!request.data) {
-        throw new Error("No recording data received");
-      }
-
-      // Ensure the badge text is cleared
-      chrome.action.setBadgeText({ text: "" });
-
-      const now = new Date();
-      const timestamp = now
-        .toLocaleString()
-        .replace(/[/:]/g, "-")
-        .replace(/,|\s/g, "_");
-      const filename = `screen-recording_${timestamp}.webm`;
-
-      chrome.downloads.download(
-        {
-          url: `data:${request.mimeType};base64,${request.data}`,
-          filename: filename,
-          saveAs: true,
-        },
-        (downloadId) => {
-          if (chrome.runtime.lastError) {
-            console.error("Download failed:", chrome.runtime.lastError);
-          } else {
-            console.log("Download started with ID:", downloadId);
-
-            chrome.runtime
-              .sendMessage({
-                action: "recordingStopped",
-              })
-              .catch(() => {
-                /* Ignore if popup is closed */
-              });
-          }
-        }
-      );
-    } catch (error) {
-      console.error("Error initiating download:", error);
-      // Ensure the badge text is cleared
-      chrome.action.setBadgeText({ text: "" });
-      chrome.runtime
-        .sendMessage({
-          action: "recordingError",
-          error: "Failed to download recording",
-        })
-        .catch(() => {
-          /* Ignore if popup is closed */
-        });
-    }
-
-    return true;
   }
 
   if (request.action === "updateButton") {
