@@ -1,18 +1,26 @@
 {
   "manifest_version": 3,
-  "name": "Camera Recorder",
-  "version": "1.0",
+  "name": "Screen Recorder",
+  "version": "1",
+  "description": "Chrome extension for screen recording.",
   "permissions": [
-    "activeTab",
-    "tabCapture",
-    "scripting",
     "desktopCapture",
     "tabs",
-    "offscreen",
     "storage",
-    "downloads"
+    "activeTab",
+    "scripting",
+    "downloads",
+    "offscreen"
   ],
-  "host_permissions": ["<all_urls>"],
+  "host_permissions": [
+    "<all_urls>",
+    "https://*.blob.core.windows.net/",
+    "http://localhost:*/",
+    "http://127.0.0.1:*/"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://localhost:* blob:;"
+  },
   "action": {
     "default_popup": "popup.html"
   },

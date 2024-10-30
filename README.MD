@@ -44,7 +44,7 @@ This is a work-in-progress (WIP) extension. While the basic screen recording fun
 #### Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
 
 In a nutshell commercial usage of code is not allowed. You have to contact us if you want to use
-code commercially. Contact info: hello@transpify.com
+code commercially. Contact info: furqan.adeveloper@gmail.com
 
 Twitter (AKA X):  [https://x.com/iamfurqanalii]
 Linkedin : https://www.linkedin.com/in/iamfurqanalii/

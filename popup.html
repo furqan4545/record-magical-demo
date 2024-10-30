@@ -1,3 +1,4 @@
+<!-- popup.html -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -16,7 +17,6 @@
     button.recording {
       background-color: #f44336;
     }
-    /* Styles for the toggle switches */
     .toggle-container {
       display: flex;
       align-items: center;
@@ -26,24 +26,13 @@
       margin-left: 8px;
       font-weight: bold;
     }
-    /* Arrange toggles vertically */
-    .toggle-group {
-      display: flex;
-      flex-direction: column;
-    }
   </style>
 </head>
 <body>
-  <button id="recordButton">Record Tab</button>
-  <div class="toggle-group">
-    <div class="toggle-container">
-      <input type="checkbox" id="cameraToggle" />
-      <label for="cameraToggle" class="toggle-label">Include Camera</label>
-    </div>
-    <div class="toggle-container">
-      <input type="checkbox" id="audioToggle" checked />
-      <label for="audioToggle" class="toggle-label">Include Audio</label>
-    </div>
+  <button id="recordButton">Record</button>
+  <div class="toggle-container">
+    <input type="checkbox" id="audioToggle" checked />
+    <label for="audioToggle" class="toggle-label">Include Audio</label>
   </div>
   <script src="popup.js"></script>
 </body>

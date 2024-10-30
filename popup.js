@@ -1,58 +1,77 @@
+// popup.js
+
 // let isRecording = false;
-// let recordingTabId = null; // Track which tab is being recorded
-// let includeCamera = false; // Track whether to include the camera
-// let includeAudio = true; // Track whether to include audio
+// let recordingTabId = null;
+// let includeAudio = true;
 
 // function updateButtonState(recording) {
 //   const button = document.getElementById("recordButton");
 //   isRecording = recording;
-//   button.textContent = isRecording ? "Stop Recording" : "Record Tab";
+//   button.textContent = isRecording ? "Stop Recording" : "Record";
 //   button.className = isRecording ? "recording" : "";
 
-//   // Disable the 'Include Camera' and 'Include Audio' toggles when recording
-//   document.getElementById("cameraToggle").disabled = isRecording;
 //   document.getElementById("audioToggle").disabled = isRecording;
 // }
 
 // function resetFlags() {
-//   includeCamera = false;
-//   includeAudio = true; // Reset to default value
+//   includeAudio = true;
 // }
 
 // function closePopup() {
 //   window.close();
 // }
 
-// // On popup load, get the current recording state and settings
+// // Request current recording state when popup loads
 // document.addEventListener("DOMContentLoaded", () => {
-//   chrome.storage.local.get(
-//     ["isRecording", "includeCamera", "includeAudio", "recordingTabId"],
-//     (data) => {
-//       if (data) {
-//         isRecording = data.isRecording || false;
-//         includeCamera = data.includeCamera || false;
-//         includeAudio =
-//           data.includeAudio !== undefined ? data.includeAudio : true;
-//         recordingTabId = data.recordingTabId || null;
-
-//         updateButtonState(isRecording);
-
-//         // Set the toggles to reflect the stored settings
-//         document.getElementById("cameraToggle").checked = includeCamera;
-//         document.getElementById("audioToggle").checked = includeAudio;
-//       }
+//   chrome.runtime.sendMessage({ action: "getRecordingState" }, (response) => {
+//     if (response) {
+//       isRecording = response.isRecording;
+//       recordingTabId = response.recordingTabId; // Retrieve the recording tab ID
+//       updateButtonState(isRecording);
+//     } else {
+//       isRecording = false;
+//       recordingTabId = null;
+//       updateButtonState(isRecording);
 //     }
-//   );
+
+//     // Get includeAudio from storage if needed
+//     chrome.storage.local.get(["includeAudio"], (data) => {
+//       includeAudio = data.includeAudio !== undefined ? data.includeAudio : true;
+//       document.getElementById("audioToggle").checked = includeAudio;
+//     });
+//   });
 // });
 
 // document.getElementById("recordButton").addEventListener("click", async () => {
 //   try {
+//     /////
+//     const [tab] = await chrome.tabs.query({
+//       active: true,
+//       currentWindow: true,
+//     });
+
+//     // Check if the URL is unsupported
+//     const unsupportedSchemes = [
+//       "chrome://",
+//       "edge://",
+//       "about:",
+//       "moz-extension://",
+//       "chrome-extension://",
+//       "edge-extension://",
+//     ];
+//     const url = tab.url;
+
+//     if (unsupportedSchemes.some((scheme) => url.startsWith(scheme))) {
+//       alert(
+//         "Recording cannot be started from this page due to security restrictions. Please switch to another tab."
+//       );
+//       return;
+//     }
+//     /////
+
 //     if (!isRecording) {
-//       // Get the state of the camera and audio toggles
-//       includeCamera = document.getElementById("cameraToggle").checked;
 //       includeAudio = document.getElementById("audioToggle").checked;
 
-//       // Get current tab
 //       const [tab] = await chrome.tabs.query({
 //         active: true,
 //         currentWindow: true,
@@ -61,137 +80,157 @@
 //       recordingTabId = tab.id;
 //       console.log("Starting recording on tab:", recordingTabId);
 
-//       // Start recording and wait for a response
-//       chrome.runtime.sendMessage(
+//       // Save includeAudio to storage
+//       chrome.storage.local.set({ includeAudio });
+
+//       // Inject content script into the active tab
+//       await chrome.scripting.executeScript({
+//         target: { tabId: recordingTabId },
+//         files: ["content.js"],
+//       });
+
+//       // Send message to content script to start recording
+//       chrome.tabs.sendMessage(
+//         recordingTabId,
 //         {
 //           action: "startRecording",
-//           tabId: tab.id,
-//           includeCamera: includeCamera, // Pass the camera preference
-//           includeAudio: includeAudio, // Pass the audio preference
+//           includeAudio: includeAudio,
+//           recordingTabId: recordingTabId,
 //         },
 //         (response) => {
+//           if (chrome.runtime.lastError) {
+//             console.error("Runtime error:", chrome.runtime.lastError);
+//             updateButtonState(false);
+//             resetFlags();
+//             return;
+//           }
 //           if (response && response.success) {
-//             // Update the button state to recording
+//             // Update recording state
+//             isRecording = true;
+//             // Notify background script
+//             chrome.runtime.sendMessage({
+//               action: "startRecording",
+//               recordingTabId: recordingTabId,
+//             });
 //             updateButtonState(true);
-//             // Close the popup after starting the recording
 //             closePopup();
 //           } else {
-//             // Handle error starting recording
-//             alert(`Failed to start recording: ${response.error}`);
+//             // Recording did not start, reset the state
+//             isRecording = false;
+//             recordingTabId = null;
 //             updateButtonState(false);
 //             resetFlags();
 //           }
 //         }
 //       );
 //     } else {
-//       // Stop recording
-//       chrome.runtime.sendMessage({
-//         action: "stopRecording",
-//       });
-
-//       // Stop the camera in the recording tab if it was started
-//       if (includeCamera) {
-//         try {
-//           if (recordingTabId) {
-//             await chrome.tabs.sendMessage(recordingTabId, {
-//               action: "stopCamera",
-//             });
-//           }
-//         } catch (error) {
-//           console.log("Could not stop camera:", error);
-//         }
+//       // Retrieve recordingTabId from background script in case it was lost
+//       if (!recordingTabId) {
+//         const response = await new Promise((resolve) => {
+//           chrome.runtime.sendMessage({ action: "getRecordingState" }, resolve);
+//         });
+//         recordingTabId = response.recordingTabId;
 //       }
 
-//       // Reset flags
-//       resetFlags();
+//       if (recordingTabId) {
+//         // Send message to content script to stop recording
+//         chrome.tabs.sendMessage(recordingTabId, { action: "stopRecording" });
 
-//       // Update the button state to not recording
-//       updateButtonState(false);
+//         // Update recording state
+//         isRecording = false;
+//         recordingTabId = null;
+//         // Notify background script
+//         chrome.runtime.sendMessage({ action: "stopRecording" });
+//         updateButtonState(false);
+//         resetFlags();
+//         closePopup();
+//       } else {
+//         console.error("No recordingTabId found to stop recording.");
+//         updateButtonState(false);
+//         resetFlags();
+//       }
 //     }
 //   } catch (error) {
 //     console.error("Error:", error);
-//     alert("An error occurred. The recording has been stopped.");
-
-//     // Force stop recording in case of error
-//     chrome.runtime.sendMessage({
-//       action: "stopRecording",
-//     });
-
-//     // Stop the camera if it was started
-//     if (includeCamera && recordingTabId) {
-//       try {
-//         await chrome.tabs.sendMessage(recordingTabId, {
-//           action: "stopCamera",
-//         });
-//       } catch (error) {
-//         console.log("Could not stop camera:", error);
-//       }
-//     }
-
-//     // Reset flags and UI
 //     resetFlags();
 //     updateButtonState(false);
 //   }
 // });
 
-////////////////////////////////////////////////////////////
-// popup.js
+//////////////////////////////////////////////////////////////
 
 let isRecording = false;
-let recordingTabId = null; // Track which tab is being recorded
-let includeCamera = false; // Track whether to include the camera
-let includeAudio = true; // Track whether to include audio
+let recordingTabId = null;
+let includeAudio = true;
 
 function updateButtonState(recording) {
   const button = document.getElementById("recordButton");
   isRecording = recording;
-  button.textContent = isRecording ? "Stop Recording" : "Record Tab";
+  button.textContent = isRecording ? "Stop Recording" : "Record";
   button.className = isRecording ? "recording" : "";
 
-  // Disable the 'Include Camera' and 'Include Audio' toggles when recording
-  document.getElementById("cameraToggle").disabled = isRecording;
   document.getElementById("audioToggle").disabled = isRecording;
 }
 
 function resetFlags() {
-  includeCamera = false;
-  includeAudio = true; // Reset to default value
+  includeAudio = true;
 }
 
 function closePopup() {
   window.close();
 }
 
-// On popup load, get the current recording state and settings
+// Request current recording state when popup loads
 document.addEventListener("DOMContentLoaded", () => {
-  chrome.storage.local.get(
-    ["isRecording", "includeCamera", "includeAudio", "recordingTabId"],
-    (data) => {
-      if (data) {
-        isRecording = data.isRecording || false;
-        includeCamera = data.includeCamera || false;
-        includeAudio =
-          data.includeAudio !== undefined ? data.includeAudio : true;
-        recordingTabId = data.recordingTabId || null;
-
-        updateButtonState(isRecording);
-
-        // Set the toggles to reflect the stored settings
-        document.getElementById("cameraToggle").checked = includeCamera;
-        document.getElementById("audioToggle").checked = includeAudio;
-      }
+  chrome.runtime.sendMessage({ action: "getRecordingState" }, (response) => {
+    if (response) {
+      isRecording = response.isRecording;
+      recordingTabId = response.recordingTabId; // Retrieve the recording tab ID
+      updateButtonState(isRecording);
+    } else {
+      isRecording = false;
+      recordingTabId = null;
+      updateButtonState(isRecording);
     }
-  );
+
+    // Get includeAudio from storage if needed
+    chrome.storage.local.get(["includeAudio"], (data) => {
+      includeAudio = data.includeAudio !== undefined ? data.includeAudio : true;
+      document.getElementById("audioToggle").checked = includeAudio;
+    });
+  });
 });
 
 document.getElementById("recordButton").addEventListener("click", async () => {
   try {
+    /////
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
+
+    // Check if the URL is unsupported
+    const unsupportedSchemes = [
+      "chrome://",
+      "edge://",
+      "about:",
+      "moz-extension://",
+      "chrome-extension://",
+      "edge-extension://",
+    ];
+    const url = tab.url;
+
+    if (unsupportedSchemes.some((scheme) => url.startsWith(scheme))) {
+      alert(
+        "Recording cannot be started from this page due to security restrictions. Please switch to another tab."
+      );
+      return;
+    }
+    /////
+
     if (!isRecording) {
-      // Get the state of the camera and audio toggles
-      includeCamera = document.getElementById("cameraToggle").checked;
       includeAudio = document.getElementById("audioToggle").checked;
 
-      // Get current tab
       const [tab] = await chrome.tabs.query({
         active: true,
         currentWindow: true,
@@ -200,74 +239,78 @@ document.getElementById("recordButton").addEventListener("click", async () => {
       recordingTabId = tab.id;
       console.log("Starting recording on tab:", recordingTabId);
 
-      // Start recording and wait for a response
-      chrome.runtime.sendMessage(
+      // Save includeAudio to storage
+      chrome.storage.local.set({ includeAudio });
+
+      // Inject content script into the active tab
+      await chrome.scripting.executeScript({
+        target: { tabId: recordingTabId },
+        files: ["content.js"],
+      });
+
+      // Send message to content script to start recording
+      chrome.tabs.sendMessage(
+        recordingTabId,
         {
           action: "startRecording",
-          tabId: tab.id,
-          includeCamera: includeCamera, // Pass the camera preference
-          includeAudio: includeAudio, // Pass the audio preference
+          includeAudio: includeAudio,
+          recordingTabId: recordingTabId,
         },
         (response) => {
+          if (chrome.runtime.lastError) {
+            console.error("Runtime error:", chrome.runtime.lastError);
+            updateButtonState(false);
+            resetFlags();
+            return;
+          }
           if (response && response.success) {
-            // Update the button state to recording
+            // Update recording state
+            isRecording = true;
+            // Notify background script
+            chrome.runtime.sendMessage({
+              action: "startRecording",
+              recordingTabId: recordingTabId,
+            });
             updateButtonState(true);
-            // Close the popup after starting the recording
             closePopup();
           } else {
-            // Handle error starting recording
-            alert(`Failed to start recording: ${response.error}`);
+            // Recording did not start, reset the state
+            isRecording = false;
+            recordingTabId = null;
             updateButtonState(false);
             resetFlags();
           }
         }
       );
     } else {
-      // Stop recording
-      chrome.runtime.sendMessage({
-        action: "stopRecording",
-      });
-
-      // Stop the camera in the recording tab if it was started
-      if (includeCamera) {
-        try {
-          if (recordingTabId) {
-            await chrome.tabs.sendMessage(recordingTabId, {
-              action: "stopCamera",
-            });
-          }
-        } catch (error) {
-          console.log("Could not stop camera:", error);
-        }
+      // Retrieve recordingTabId from background script in case it was lost
+      if (!recordingTabId) {
+        const response = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({ action: "getRecordingState" }, resolve);
+        });
+        recordingTabId = response.recordingTabId;
       }
 
-      // Reset flags
-      resetFlags();
+      if (recordingTabId) {
+        // Send message to content script to stop recording
+        chrome.tabs.sendMessage(recordingTabId, { action: "stopRecording" });
 
-      // Update the button state to not recording
-      updateButtonState(false);
+        // Update recording state
+        isRecording = false;
+        recordingTabId = null;
+        // Notify background script
+        chrome.runtime.sendMessage({ action: "stopRecording" });
+        updateButtonState(false);
+        resetFlags();
+        closePopup();
+      } else {
+        console.error("No recordingTabId found to stop recording.");
+        updateButtonState(false);
+        resetFlags();
+      }
     }
   } catch (error) {
     console.error("Error:", error);
-    alert("An error occurred. The recording has been stopped.");
-
-    // Force stop recording in case of error
-    chrome.runtime.sendMessage({
-      action: "stopRecording",
-    });
-
-    // Stop the camera if it was started
-    if (includeCamera && recordingTabId) {
-      try {
-        await chrome.tabs.sendMessage(recordingTabId, {
-          action: "stopCamera",
-        });
-      } catch (error) {
-        console.log("Could not stop camera:", error);
-      }
-    }
-
-    // Reset flags and UI
     resetFlags();
     updateButtonState(false);
   }
